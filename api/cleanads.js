@@ -1,42 +1,36 @@
-// api/cleanads.js - Vercel Edge Function
+// api/cleanads.js - Vercel Serverless Function (Node.js runtime)
 // This proxies requests to the CleanAds API with proper headers
 
-export const config = {
-  runtime: 'edge',
-};
-
-export default async function handler(request) {
+export default async function handler(req, res) {
   // Enable CORS for Airbyte
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  };
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
 
   // Handle preflight requests
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
   }
 
   try {
     // Parse query parameters from the incoming request
-    const url = new URL(request.url);
-    const advertiserId = url.searchParams.get('advertiser_id') || 'MTU0Mg%3D%3D';
-    const rangeDays = url.searchParams.get('range_days') || '7';
+    const advertiserId = req.query.advertiser_id || 'MTU0Mg%3D%3D';
+    const rangeDays = req.query.range_days || '7';
     
     // Optional: Add API key authentication for your proxy
-    const apiKey = request.headers.get('X-API-Key');
-    if (apiKey !== process.env.PROXY_API_KEY) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const apiKey = req.headers['x-api-key'];
+    if (process.env.PROXY_API_KEY && apiKey !== process.env.PROXY_API_KEY) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
     // Build the CleanAds API URL
     const cleanAdsUrl = `https://cleanads.net/crm/customreports/api/AdvertiserAdSetSummaryRange/?AdvertiserID=${advertiserId}&rptFormat=json&rangedays=${rangeDays}`;
 
-    // Fetch from CleanAds with the proper headers that work
+    console.log('Fetching from:', cleanAdsUrl);
+
+    // Use native fetch with Node.js runtime
     const response = await fetch(cleanAdsUrl, {
       method: 'GET',
       headers: {
@@ -50,14 +44,29 @@ export default async function handler(request) {
       },
     });
 
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
     if (!response.ok) {
-      throw new Error(`CleanAds API returned ${response.status}`);
+      const errorText = await response.text();
+      console.error('API Error Response:', errorText);
+      throw new Error(`CleanAds API returned ${response.status}: ${errorText}`);
     }
 
-    // Get the data
-    const data = await response.json();
+    // Get the response text first to debug
+    const responseText = await response.text();
+    console.log('Raw response:', responseText.substring(0, 500)); // Log first 500 chars
 
-    // Transform the data if needed (optional)
+    // Parse as JSON
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('JSON Parse Error:', parseError);
+      throw new Error('Failed to parse response as JSON');
+    }
+
+    // Transform the data if needed
     const transformedData = {
       success: true,
       metadata: {
@@ -79,27 +88,17 @@ export default async function handler(request) {
     };
 
     // Return the data with proper headers
-    return new Response(JSON.stringify(transformedData), {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-      },
-    });
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.status(200).json(transformedData);
 
   } catch (error) {
     console.error('Proxy error:', error);
-    return new Response(
-      JSON.stringify({ 
-        error: 'Failed to fetch data', 
-        details: error.message 
-      }), 
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    res.status(500).json({ 
+      error: 'Failed to fetch data', 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }
 
