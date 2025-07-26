@@ -137,11 +137,16 @@ export default async function handler(req, res) {
         
         const normalizedDate = normalizeDate(record.ShortDate);
         
+        // Ensure we ALWAYS have these required fields
+        const shortDate = record.ShortDate || '';
+        const campaignName = record.CampaignName || 'Unknown';
+        const adsetName = record.AdsetName || 'Unknown';
+        
         return {
           // Required fields - always present, never null
-          ShortDate: record.ShortDate || '',
-          CampaignName: record.CampaignName || '',
-          AdsetName: record.AdsetName || '',
+          ShortDate: shortDate,
+          CampaignName: campaignName,
+          AdsetName: adsetName,
           
           // Original stat fields - ensure consistent types
           statImpressions: parseIntSafe(record.statImpressions),
@@ -157,10 +162,10 @@ export default async function handler(req, res) {
           conversions: parseIntSafe(record.statConversions),
           
           // Add a unique identifier for deduplication
-          record_id: `${normalizedDate}_${record.CampaignName}_${record.AdsetName}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          record_id: `${normalizedDate || shortDate}_${campaignName}_${adsetName}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
           
           // Add timestamp for cursor (using normalized date + time at end of day)
-          cursor_timestamp: normalizedDate ? `${normalizedDate}T23:59:59Z` : null,
+          cursor_timestamp: normalizedDate ? `${normalizedDate}T23:59:59Z` : `${shortDate}T23:59:59Z`,
         };
       }),
     };
