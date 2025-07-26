@@ -16,7 +16,14 @@ export default async function handler(req, res) {
 
   try {
     // Parse query parameters from the incoming request
-    const advertiserId = req.query.advertiser_id;
+    let advertiserId = req.query.advertiser_id;
+    
+    // Handle both URL-encoded (%3D) and non-encoded (==) versions
+    if (advertiserId.includes('==') && !advertiserId.includes('%')) {
+      // Convert == to %3D%3D for the API call
+      advertiserId = advertiserId.replace(/==/g, '%3D%3D');
+    }
+    
     let rangeDays = req.query.range_days || '7';
     const startDate = req.query.start_date; // For incremental sync
     const endDate = req.query.end_date;     // For incremental sync
