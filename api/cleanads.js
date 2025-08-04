@@ -24,7 +24,9 @@ export default async function handler(req, res) {
       advertiserId = advertiserId.replace(/==/g, '%3D%3D');
     }
     
-    let rangeDays = req.query.range_days || '7';
+    // Always fetch maximum available data (90 days) to ensure we don't miss anything
+    // The CleanAds API returns last N days from TODAY, not from a specific start date
+    let rangeDays = '90';
     const startDate = req.query.start_date; // For incremental sync
     const endDate = req.query.end_date;     // For incremental sync
     
@@ -35,15 +37,9 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Calculate range days if start_date is provided (for incremental sync)
+    // Log the date range being requested for debugging
     if (startDate) {
-      const start = new Date(startDate);
-      const end = endDate ? new Date(endDate) : new Date();
-      const diffTime = Math.abs(end - start);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      rangeDays = Math.min(90, Math.max(1, diffDays + 1)).toString(); // +1 to include both start and end dates
-      
-      console.log(`Calculated range days: ${rangeDays} from ${startDate} to ${end.toISOString()}`);
+      console.log(`Fetching 90 days of data, will filter from ${startDate} to ${endDate || 'today'}`);
     }
 
     // Build the CleanAds API URL
@@ -127,7 +123,8 @@ export default async function handler(req, res) {
         date_range: {
           start: startDate || null,
           end: endDate || new Date().toISOString().split('T')[0],
-          requested_days: rangeDays
+          api_fetched_days: rangeDays,
+          note: 'CleanAds API returns last N days from today'
         }
       },
       records: filteredData.map(record => {
